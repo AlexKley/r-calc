@@ -11,6 +11,7 @@ use cosmic::iced::keyboard::{self, Key, key::Named, key::Physical, key::Code};
 pub struct AppModel {
     core: Core,
     visor: String,
+    nova_conta: bool,
 }
 
 // 2. Os Eventos Possíveis
@@ -42,7 +43,8 @@ impl Application for AppModel {
         (
             AppModel {
                 core,
-                visor: String::from("0"),
+                visor: String::new(),
+                nova_conta: false,
             },
             Task::none(),
         )
@@ -52,30 +54,61 @@ impl Application for AppModel {
     fn update(&mut self, message: Self::Message) -> Task<Action<Self::Message>> {
         match message {
             Message::DigitoPressionado(c) => {
-                        // Agora limpa o visor se houver um 0 inicial OU uma mensagem de erro
-                        if self.visor == "0" || self.visor == "Erro" {
-                            self.visor.clear();
-                        }
-                        self.visor.push(c);
+                // Se a tela exibe um erro, limpamos imediatamente ao digitar qualquer coisa
+                if self.visor == "Erro" || (self.visor == "0" && c.is_ascii_digit()) {
+                    self.visor.clear();
+                }
+                // Se acabamos de fazer uma conta...
+                if self.nova_conta {
+                    // E o usuário digitou um NÚMERO, limpamos a tela para começar de novo.
+                    // (Se ele digitou um '+', '-', '*' ou '/', a tela NÃO limpa, 
+                    // permitindo que ele continue a conta com o resultado anterior!)
+                    if c.is_ascii_digit() {
+                        self.visor.clear();
+                    }
+                    // A conta não é mais nova, voltamos ao modo de digitação normal
+                    self.nova_conta = false;
+                }
+
+                self.visor.push(c);
             }
             Message::Limpar => {
                 self.visor = String::from("0");
+                self.nova_conta = true;
             }
             Message::Back => {
-                self.visor.pop();
-                if self.visor.is_empty() {
+                // Se a tela estiver mostrando "Erro", o backspace funciona como o "C" (Limpar)
+                if self.visor == "Erro" {
                     self.visor = String::from("0");
+                    self.nova_conta = true;
+                } else {
+                    // Remove o último caractere da string
+                    self.visor.pop();
+                    
+                    // Se a remoção deixou a string completamente vazia, colocamos o "0"
+                    if self.visor.is_empty() {
+                        self.visor = String::from("0");
+                        self.nova_conta = true; // Garante que o "0" suma ao digitar um novo número
+                    }
                 }
             }
             Message::Calcular => {
                 match meval::eval_str(&self.visor) {
                     Ok(resultado) => {
-                        // Se o cálculo der certo, atualiza o visor com o resultado
-                        self.visor = resultado.to_string();
+                        // Bloqueia divisões por zero ou resultados impossíveis (NaN)
+                        if resultado.is_infinite() || resultado.is_nan() {
+                            self.visor = String::from("Error");
+                        } else {
+                            // Multiplica por 10.000, arredonda e divide para manter 4 casas decimais.
+                            // O .to_string() lidará sozinho com a remoção de zeros desnecessários no final.
+                            let arredondado = (resultado * 10000.0).round() / 10000.0;
+                            self.visor = arredondado.to_string();
+                        }
+                        self.nova_conta = true;
                     }
                     Err(_) => {
-                        // Se a expressão matemática for inválida
-                        self.visor = String::from("Erro");
+                        self.visor = String::from("Error");
+                        self.nova_conta = true;
                     }
                 }
             }
@@ -113,7 +146,7 @@ impl Application for AppModel {
                     },
                     Key::Named(Named::Enter) => Some(Message::Calcular),
                     Key::Named(Named::Backspace) => Some(Message::Back),
-                    Key::Named(Named::Escape) => Some(Message::Limpar),
+                    Key::Named(Named::Escape) | Key::Named(Named::Delete) => Some(Message::Limpar),
                     _ => None,
                 };
 
@@ -147,7 +180,7 @@ impl Application for AppModel {
         })
     }
 
-    fn view(&self) -> Element<Self::Message> {
+    fn view(&self) -> Element<'_, Self::Message> {
         let texto_display = text(&self.visor)
             .size(40)
             .width(Length::Fill)
@@ -155,7 +188,7 @@ impl Application for AppModel {
             .align_y(alignment::Vertical::Center);
 
         let display = container(texto_display)
-            .width(Length::Fill)
+            .width(Length::Fixed(286.0))
             .height(Length::Fixed(80.0))
             .padding(10)
             .class(theme::Container::Card);
@@ -216,9 +249,17 @@ impl Application for AppModel {
             btn_largo("=", Message::Calcular, theme::Button::Suggested),
         ].spacing(10);
 
-        column![display, linha_1, linha_2, linha_3, linha_4, linha_acoes]
+        // 1. Guardamos a nossa grade inteira em uma variável
+        let grade = column![display, linha_1, linha_2, linha_3, linha_4, linha_acoes]
             .spacing(20)
-            .padding(20)
+            .padding(20);
+
+        // 2. Colocamos a grade dentro de um Container invisível que se expande e centraliza tudo
+        container(grade)
+            .width(Length::Fill)   // Estica para preencher a largura do "tile"
+            .height(Length::Fill)  // Estica para preencher a altura do "tile"
+            .align_x(alignment::Horizontal::Center) // Centraliza na horizontal
+            .align_y(alignment::Vertical::Center)   // Centraliza na vertical
             .into()
-    }
+        }
 }

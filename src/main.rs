@@ -9,8 +9,8 @@ fn main() -> cosmic::iced::Result {
 
     // 2. Trava a janela definindo os limites Mínimo e Máximo com os mesmos valores
     let limites = cosmic::iced::Limits::NONE
-        .min_width(380.0)
-        .max_width(380.0)
+        .min_width(340.0)
+        .max_width(340.0)
         .min_height(580.0)
         .max_height(580.0);
 
