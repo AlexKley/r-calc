@@ -11,7 +11,28 @@ use cosmic::iced::keyboard::{self, Key, key::Named, key::Physical, key::Code};
 pub struct AppModel {
     core: Core,
     visor: String,
+    historico: String,
     nova_conta: bool,
+}
+
+impl AppModel {
+    fn processar_calculo(&mut self) {
+        self.historico = format!("{} =", self.visor);
+        match meval::eval_str(&self.visor) {
+            Ok(resultado) => {
+                if resultado.is_infinite() || resultado.is_nan() {
+                    self.visor = String::from("Error");
+                } else {
+                    let arredondado = (resultado * 10000.0).round() / 10000.0;
+                    self.visor = arredondado.to_string();
+                }
+            }
+            Err(_) => {
+                self.visor = String::from("Error");
+            }
+        }
+        self.nova_conta = true;
+    }
 }
 
 // 2. Os Eventos Possíveis
@@ -21,6 +42,7 @@ pub enum Message {
     Limpar,
     Back,
     Calcular,
+    Copiar,
 }
 
 // 3. A Implementação
@@ -44,6 +66,7 @@ impl Application for AppModel {
             AppModel {
                 core,
                 visor: String::new(),
+                historico: String::new(),
                 nova_conta: false,
             },
             Task::none(),
@@ -74,6 +97,7 @@ impl Application for AppModel {
             }
             Message::Limpar => {
                 self.visor = String::from("0");
+                self.historico.clear();
                 self.nova_conta = true;
             }
             Message::Back => {
@@ -93,25 +117,14 @@ impl Application for AppModel {
                 }
             }
             Message::Calcular => {
-                match meval::eval_str(&self.visor) {
-                    Ok(resultado) => {
-                        // Bloqueia divisões por zero ou resultados impossíveis (NaN)
-                        if resultado.is_infinite() || resultado.is_nan() {
-                            self.visor = String::from("Error");
-                        } else {
-                            // Multiplica por 10.000, arredonda e divide para manter 4 casas decimais.
-                            // O .to_string() lidará sozinho com a remoção de zeros desnecessários no final.
-                            let arredondado = (resultado * 10000.0).round() / 10000.0;
-                            self.visor = arredondado.to_string();
-                        }
-                        self.nova_conta = true;
-                    }
-                    Err(_) => {
-                        self.visor = String::from("Error");
-                        self.nova_conta = true;
-                    }
-                }
+                self.processar_calculo();
             }
+
+            Message::Copiar => {
+                return cosmic::iced::clipboard::write(self.visor.clone())
+            }
+
+
         }
         Task::none()
     }
@@ -119,7 +132,16 @@ impl Application for AppModel {
     fn subscription(&self) -> Subscription<Self::Message> {
         event::listen_with(|event, _status, _window| match event {
             // Agora extraímos também a 'physical_key' (a tecla física apertada no hardware)
-            Event::Keyboard(keyboard::Event::KeyPressed { key, physical_key, .. }) => {
+            Event::Keyboard(keyboard::Event::KeyPressed { key, physical_key, modifiers, .. }) => {
+
+                if modifiers.control() {
+                    if let Key::Character(c) = &key {
+                        if c.as_str() == "c" || c.as_str() == "C" {
+                            return Some(Message::Copiar);
+                        }
+                    }
+                    return None; // Se for outro atalho com Ctrl, ignora para não digitar na tela
+                }
                 
                 // 1. Tenta identificar pelo caractere lógico (teclado principal)
                 let mensagem_logica = match key {
@@ -181,19 +203,25 @@ impl Application for AppModel {
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
+        let texto_historico = text(&self.historico)
+            .size(20) // Tamanho da fonte menor
+            .width(Length::Fill)
+            .align_x(alignment::Horizontal::Right);
+
         let texto_display = text(&self.visor)
             .size(40)
             .width(Length::Fill)
-            .align_x(alignment::Horizontal::Right)
-            .align_y(alignment::Vertical::Center);
+            .align_x(alignment::Horizontal::Right);
 
-        let display = container(texto_display)
+        let coluna_visor = column![texto_historico, texto_display]
+            .spacing(5);
+
+        let display = container(coluna_visor)
             .width(Length::Fixed(286.0))
-            .height(Length::Fixed(80.0))
+            .height(Length::Fixed(100.0)) // <-- Aumentado para caber os dois textos
             .padding(10)
             .class(theme::Container::Card);
 
-        // 1. Atualizamos o ajudante para receber o tema
         let btn = |texto: &'static str, msg: Message, estilo: theme::Button| {
             button::text(texto)
                 .on_press(msg)
@@ -244,9 +272,9 @@ impl Application for AppModel {
         ].spacing(10);
 
         let linha_acoes = row![
-            btn("0", Message::DigitoPressionado('0'), theme::Button::Standard),
+            btn_largo("0", Message::DigitoPressionado('0'), theme::Button::Standard),
             btn(".", Message::DigitoPressionado('.'), theme::Button::Standard),
-            btn_largo("=", Message::Calcular, theme::Button::Suggested),
+            btn("=", Message::Calcular, theme::Button::Suggested),
         ].spacing(10);
 
         // 1. Guardamos a nossa grade inteira em uma variável

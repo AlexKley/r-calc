@@ -11,8 +11,8 @@ fn main() -> cosmic::iced::Result {
     let limites = cosmic::iced::Limits::NONE
         .min_width(340.0)
         .max_width(340.0)
-        .min_height(580.0)
-        .max_height(580.0);
+        .min_height(600.0)
+        .max_height(600.0);
 
     // 3. Aplica os limites nas configurações
     let settings = cosmic::app::Settings::default().size_limits(limites);
