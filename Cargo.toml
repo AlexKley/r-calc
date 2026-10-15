@@ -3,8 +3,8 @@ name = "r-calc"
 version = "0.1.0"
 edition = "2024"
 license = "MPL-2.0"
-description = "An Rust based calculator for the COSMIC desktop"
-repository = "https://github.com/AlexKley/r_calc"
+description = "A Rust-based calculator for the COSMIC desktop"
+repository = "https://github.com/AlexKley/r-calc"
 
 [dependencies]
 i18n-embed = { version = "0.16", features = [

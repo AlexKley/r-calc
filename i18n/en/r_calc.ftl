@@ -1,5 +1,5 @@
 app-title = R Calc
-app-comment = An Rust based calculator for the COSMIC desktop
+app-comment = A Rust-based calculator for the COSMIC desktop
 app-keywords =
 about = About
 repository = Repository

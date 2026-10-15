@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=R Calc
-Comment=An Rust based calculator for the COSMIC desktop
+Comment=A Rust-based calculator for the COSMIC desktop
 Type=Application
 Icon=io.github.alexkley.r_calc
 Exec=r-calc %F
