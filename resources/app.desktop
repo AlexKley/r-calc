@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=R Calc
+Comment=An Rust based calculator for the COSMIC desktop
+Type=Application
+Icon=io.github.alexkley.r_calc
+Exec=r-calc %F
+Terminal=false
+StartupNotify=true
+Categories=COSMIC
+Keywords=COSMIC
+MimeType=

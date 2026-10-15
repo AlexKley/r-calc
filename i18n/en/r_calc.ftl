@@ -1,0 +1,9 @@
+app-title = R Calc
+app-comment = An Rust based calculator for the COSMIC desktop
+app-keywords =
+about = About
+repository = Repository
+view = View
+welcome = Welcome to COSMIC! ✨
+page-id = Page { $num }
+git-description = Git commit {$hash} on {$date}
