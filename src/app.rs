@@ -33,7 +33,11 @@ impl AppModel {
         }
 
         self.historico = format!("{} =", self.visor);
-        match meval::eval_str(&self.visor) {
+
+        // Replace '%' with '/100.0' to handle percentage calculations correctly
+        let expressao_formatada = self.visor.replace("%", "/100.0");
+        
+        match meval::eval_str(&expressao_formatada) {
             Ok(resultado) => {
                 if resultado.is_infinite() || resultado.is_nan() {
                     self.visor = String::from("Error");
