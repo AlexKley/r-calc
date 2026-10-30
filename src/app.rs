@@ -22,6 +22,12 @@ pub struct AppModel {
     nova_conta: bool,
 }
 
+const MAX_VISOR_LEN: usize = 32;
+
+fn is_operator(c: char) -> bool {
+    matches!(c, '+' | '-' | '*' | '/' | '%')
+}
+
 impl AppModel {
     /// Evaluates the mathematical expression currently in the visor using `meval`.
     ///
@@ -32,15 +38,31 @@ impl AppModel {
             return;
         }
 
+        // Trim any trailing operator (e.g., "5 +" -> "5")
+        while let Some(last) = self.visor.chars().last() {
+            if is_operator(last) {
+                self.visor.pop();
+            } else {
+                break;
+            }
+        }
+
+        if self.visor.trim().is_empty() {
+            self.visor = String::from("0");
+            return;
+        }
+
         self.historico = format!("{} =", self.visor);
 
         // Replace '%' with '/100.0' to handle percentage calculations correctly
-        let expressao_formatada = self.visor.replace("%", "/100.0");
+        let expressao_formatada = self.visor.replace('%', "/100.0");
         
         match meval::eval_str(&expressao_formatada) {
             Ok(resultado) => {
                 if resultado.is_infinite() || resultado.is_nan() {
                     self.visor = String::from("Error");
+                } else if resultado.abs() > 1e12 || (resultado.abs() < 1e-4 && resultado != 0.0) {
+                    self.visor = format!("{resultado:e}");
                 } else {
                     // Round to 4 decimal places to prevent floating point inaccuracies
                     let arredondado = (resultado * 10000.0).round() / 10000.0;
@@ -103,20 +125,55 @@ impl Application for AppModel {
     fn update(&mut self, message: Self::Message) -> Task<Action<Self::Message>> {
         match message {
             Message::DigitoPressionado(c) => {
-                // If display shows an error or a leading "0" before entering a digit, clear display first
-                if self.visor == "Error" || self.visor == "Erro" || (self.visor == "0" && c.is_ascii_digit()) {
+                // If display shows an error, reset before proceeding
+                if self.visor == "Error" || self.visor == "Erro" {
                     self.visor.clear();
                 }
 
                 // If a calculation was just completed:
                 if self.nova_conta {
-                    // When user types a digit, start fresh with the new number.
-                    // If an operator (+, -, *, /, %) is pressed instead, keep the previous result
-                    // to allow continuing calculations seamlessly.
-                    if c.is_ascii_digit() {
+                    // When user types a digit or decimal point, start fresh with the new number.
+                    // If an operator (+, -, *, /, %) is pressed, keep previous result for chaining.
+                    if c.is_ascii_digit() || c == '.' {
                         self.visor.clear();
                     }
                     self.nova_conta = false;
+                }
+
+                // Bound max length to avoid UI overflow and DoS
+                if self.visor.len() >= MAX_VISOR_LEN {
+                    return Task::none();
+                }
+
+                // Operator sanitization: replace trailing operator instead of stacking (e.g., 5 + * -> 5 *)
+                if is_operator(c) {
+                    if let Some(ultimo) = self.visor.chars().last()
+                        && is_operator(ultimo)
+                    {
+                        self.visor.pop();
+                    }
+                    // Do not allow % as first character or directly after an operator
+                    if c == '%' && self.visor.is_empty() {
+                        return Task::none();
+                    }
+                    self.visor.push(c);
+                    return Task::none();
+                }
+
+                // Decimal point sanitization: prevent multiple '.' in the current number segment
+                if c == '.' {
+                    let ultimo_segmento = self.visor.rsplit(is_operator).next().unwrap_or("");
+                    if ultimo_segmento.contains('.') {
+                        return Task::none();
+                    }
+                    if self.visor.is_empty() || is_operator(self.visor.chars().last().unwrap()) {
+                        self.visor.push('0');
+                    }
+                }
+
+                // Replace leading "0" with new digit
+                if self.visor == "0" && c.is_ascii_digit() {
+                    self.visor.clear();
                 }
 
                 self.visor.push(c);
@@ -230,22 +287,39 @@ impl Application for AppModel {
 
     /// Renders the user interface using COSMIC widgets and styling.
     fn view(&self) -> Element<'_, Self::Message> {
+        let tamanho_fonte_visor = match self.visor.len() {
+            0..=9 => 40,
+            10..=12 => 30,
+            13..=16 => 24,
+            17..=21 => 18,
+            22..=26 => 15,
+            _ => 13,
+        };
+
+        let tamanho_fonte_historico = match self.historico.len() {
+            0..=16 => 16,
+            17..=24 => 13,
+            _ => 11,
+        };
+
         let texto_historico = text(&self.historico)
-            .size(20)
+            .size(tamanho_fonte_historico)
             .width(Length::Fill)
             .align_x(alignment::Horizontal::Right);
 
         let texto_display = text(&self.visor)
-            .size(40)
+            .size(tamanho_fonte_visor)
             .width(Length::Fill)
             .align_x(alignment::Horizontal::Right);
 
-        let coluna_visor = column![texto_historico, texto_display].spacing(5);
+        let coluna_visor = column![texto_historico, texto_display].spacing(4);
 
         let display = container(coluna_visor)
             .width(Length::Fixed(286.0))
             .height(Length::Fixed(100.0))
-            .padding(10)
+            .padding(12)
+            .align_y(alignment::Vertical::Center)
+            .clip(true)
             .class(theme::Container::Card);
 
         // Standard square button constructor
@@ -327,7 +401,7 @@ impl Application for AppModel {
 
 #[cfg(test)]
 mod tests {
-    use super::Message;
+    use super::*;
 
     #[test]
     fn test_eval_basic_arithmetic() {
@@ -353,5 +427,31 @@ mod tests {
     fn test_message_equality() {
         assert_eq!(Message::DigitoPressionado('5'), Message::DigitoPressionado('5'));
         assert_ne!(Message::Limpar, Message::Calcular);
+    }
+
+    #[test]
+    fn test_is_operator() {
+        assert!(is_operator('+'));
+        assert!(is_operator('-'));
+        assert!(is_operator('*'));
+        assert!(is_operator('/'));
+        assert!(is_operator('%'));
+        assert!(!is_operator('0'));
+        assert!(!is_operator('.'));
+    }
+
+    #[test]
+    fn test_large_number_formatting() {
+        let val: f64 = 1e305;
+        // Directly multiplying 1e305 by 10000.0 would overflow to infinity in IEEE-754
+        assert!((val * 10000.0).is_infinite());
+        // Exponential format handles large values gracefully
+        assert_eq!(format!("{val:e}"), "1e305");
+    }
+
+    #[test]
+    fn test_division_by_zero() {
+        let res = meval::eval_str("5 / 0");
+        assert!(res.unwrap().is_infinite());
     }
 }
